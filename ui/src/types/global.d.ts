@@ -1,0 +1,45 @@
+import type { DesktopUpdateCheck, DesktopUpdateState } from "../utils/desktopUpdates";
+export {};
+
+declare global {
+  interface Window {
+    __ROUTER_BASENAME__?: string;
+    refreshProjects?: () => void | Promise<void>;
+    openSettings?: (tab?: string) => void;
+    // Returns true if a project matching the given name was found and the
+    // app navigated to it; false otherwise so callers (e.g. chat slash
+    // command handler) can surface a friendly "not found" message.
+    switchProject?: (projectName: string) => boolean;
+    pilotdeckDesktop?: {
+      setAppearance?: (value: { language: "en" | "zh-CN"; themeMode: "light" | "dark" | "system" }) => Promise<void>;
+      checkUpdates: () => Promise<DesktopUpdateCheck>;
+      getUpdateStatus: () => Promise<DesktopUpdateState>;
+      startUpdate: () => Promise<DesktopUpdateState>;
+      cancelUpdate: () => Promise<DesktopUpdateState>;
+      getRuntimeInfo: () => Promise<{
+        serverPort: number;
+        gatewayPort: number;
+        gateway:
+          | { state: 'stopped' | 'starting' | 'ready' }
+          | { state: 'error'; error: string };
+        runtimeRoot: string;
+        logPath: string;
+      } | null>;
+      onRuntimeStatus: (callback: (status: {
+        phase: string;
+        message: string;
+        logPath?: string;
+        error?: string;
+      }) => void) => () => void;
+      retryRuntime: () => Promise<void>;
+      openRuntimeLog: () => Promise<void>;
+      pickFolder: () => Promise<string | null>;
+    };
+  }
+
+  interface EventSourceEventMap {
+    result: MessageEvent;
+    progress: MessageEvent;
+    done: MessageEvent;
+  }
+}
