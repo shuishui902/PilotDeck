@@ -1,0 +1,6 @@
+{
+  "name": "trace",
+  "version": "0.1.0",
+  "description": "执行过程实时投影：订阅 hooks → 进程内聚合 → Web 面板（工具调用 / 轮次 / 耗时）。",
+  "entry": "index.js"
+}
