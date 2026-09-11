@@ -102,6 +102,7 @@ export class PluginRuntime {
       createExtensionApiRecorder({
         pluginName,
         getActions: () => this.options.getExtensionActions?.(),
+        generalRoot: this.options.pilotHome,
         emitStatus: (event) => this.emitPluginStatus(event),
       }),
   };

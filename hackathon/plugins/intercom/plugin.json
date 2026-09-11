@@ -1,0 +1,6 @@
+{
+  "name": "intercom",
+  "version": "0.1.0",
+  "description": "跨会话协作：General 会话通过 session_list / session_send 指挥其他项目的会话（仅挂 General 会话）。",
+  "entry": "index.js"
+}

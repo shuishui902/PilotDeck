@@ -1,0 +1,1 @@
+{ "name": "hello", "version": "0.1.0", "description": "阶段一验收插件：注册工具并调用 listSessions()", "entry": "index.js" }

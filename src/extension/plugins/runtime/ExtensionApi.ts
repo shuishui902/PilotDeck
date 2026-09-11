@@ -31,6 +31,11 @@ import type { PilotDeckToolDefinition } from "../../../tool/protocol/types.js";
  * 3. No sandbox — generation and activation are separated at the UI level.
  */
 export type PilotDeckExtensionAPI = {
+  /** Absolute path of the General workspace root (pilot home). A session is a
+   *  "General" session when its cwd resolves here — compare against the
+   *  `checkAvailability` context cwd to gate General-only tools. */
+  readonly generalRoot: string;
+
   // —— Registration (call during load) ——
   registerTool(def: PilotDeckToolDefinition): void;
   registerCommand(name: string, handler: PilotDeckExtensionCommandHandler): void;
@@ -96,6 +101,8 @@ export type ExtensionApiRecorderDeps = {
   pluginName: string;
   /** Lazily bound — the Gateway typically exists only after plugin loading starts. */
   getActions: () => PilotDeckExtensionActions | undefined;
+  /** General workspace root (pilot home); exposed as `api.generalRoot`. */
+  generalRoot?: string;
   emitStatus?: (event: PluginStatusEvent) => void;
 };
 
@@ -124,6 +131,7 @@ export function createExtensionApiRecorder(deps: ExtensionApiRecorderDeps): Exte
   };
 
   const api: PilotDeckExtensionAPI = {
+    generalRoot: deps.generalRoot ?? "",
     registerTool(def) {
       contribution.tools.push(def);
     },
