@@ -33,6 +33,7 @@ import { FileHistoryStore } from "../session/filesystem/FileHistoryStore.js";
 import type { AgentSubagentTranscriptHooks } from "../agent/runtime/AgentRuntimeDependencies.js";
 import { createPlanTodoStateManager } from "../agent/runtime/PlanTodoState.js";
 import { HookRuntime, PluginRuntime } from "../extension/index.js";
+import { gatewayExtensionActions } from "../extension/plugins/runtime/ExtensionApi.js";
 import { LifecycleRuntime } from "../lifecycle/index.js";
 import {
   GatewayElicitationChannel,
@@ -877,6 +878,9 @@ class ProjectRuntimeRegistry {
       builtinSkillsRoot: this.options.builtinSkillsRoot,
       builtinPlugins: loadBuiltinPlugins(),
       builtinPluginsEnabled: snapshot.config.extension.builtinPluginsEnabled,
+      // Code plugins act through the gateway, never the kernel. Lazily bound:
+      // the registry gets its gateway via setGateway() after construction.
+      getExtensionActions: () => (this.gateway ? gatewayExtensionActions(this.gateway) : undefined),
     });
     const routerConfig = ensureRouterConfig(snapshot.config.router, snapshot.config.agent.model);
     const router = createRouterRuntime(routerConfig, {
@@ -1198,6 +1202,23 @@ class ProjectRuntimeRegistry {
       }
     }
 
+    // -- programmatic plugin tools (code plugins, manifest `entry`) ------
+    // Registered per-session (cloned) so a refresh picking up a new or
+    // updated plugin never mutates the shared per-project registry
+    // mid-turn.
+    if (contributions.tools.length > 0) {
+      if (sessionTools === runtime.tools) {
+        sessionTools = runtime.tools.clone();
+      }
+      for (const def of contributions.tools) {
+        if (sessionTools.has(def.name)) {
+          sessionTools.replace(def);
+        } else {
+          sessionTools.register(def);
+        }
+      }
+    }
+
     const availability = await filterAvailableTools(sessionTools, {
       cwd: runtime.projectRoot,
       env: this.options.env,
@@ -1232,6 +1253,11 @@ class ProjectRuntimeRegistry {
         }
       : contributions.hooks;
     const hookRuntime = new HookRuntime(hookSettings);
+    // Code-plugin hooks are `type: "callback"` entries in the merged hook
+    // settings; their handlers live on the contribution snapshot.
+    for (const [callbackName, handler] of Object.entries(contributions.hookCallbacks)) {
+      hookRuntime.getCallbackExecutor().register(callbackName, handler);
+    }
     if (gw) {
       hookRuntime.getCallbackExecutor().register(
         GATEWAY_PERMISSION_CALLBACK_NAME,

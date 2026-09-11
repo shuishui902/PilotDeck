@@ -55,6 +55,18 @@ export {
   type PilotDeckMcpServerStaticSpec,
 } from "./plugins/runtime/PluginRuntime.js";
 export {
+  createExtensionApiRecorder,
+  gatewayExtensionActions,
+  type ExtensionApiRecorder,
+  type PilotDeckExtensionAPI,
+  type PilotDeckExtensionActions,
+  type PilotDeckExtensionCommandHandler,
+  type PilotDeckExtensionHookHandler,
+  type PilotDeckPluginSessionStatus,
+  type PluginStatusEvent,
+  type ProgrammaticPluginContribution,
+} from "./plugins/runtime/ExtensionApi.js";
+export {
   MAX_MCP_INSTRUCTION_LENGTH,
   truncateMcpInstructionString,
 } from "./plugins/runtime/truncateMcpString.js";

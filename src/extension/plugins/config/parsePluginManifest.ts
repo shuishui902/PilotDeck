@@ -32,6 +32,7 @@ export function parsePluginManifest(raw: unknown): PilotDeckPluginManifest {
       ? raw.mcpb
       : undefined,
     settings: isRecord(raw.settings) ? raw.settings : undefined,
+    entry: stringOrUndefined(raw.entry),
   };
 }
 

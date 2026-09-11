@@ -1,12 +1,19 @@
 import { resolvePluginDirectories } from "../discovery/PluginDirectoryResolver.js";
 import { discoverPluginPaths, discoverSkillPaths } from "../discovery/discoverLocalPlugins.js";
-import { loadPluginFromPath, loadSkillFromPath } from "../loading/PluginLoader.js";
+import { loadPluginFromPath, loadSkillFromPath, type ProgrammaticPluginHost } from "../loading/PluginLoader.js";
 import { loadPluginHooks } from "../loading/PluginHookLoader.js";
 import type { LoadedPluginCommand } from "../loading/PluginCommandLoader.js";
 import type { PilotDeckLoadedPlugin } from "../protocol/plugin.js";
 import { PluginRegistry } from "./PluginRegistry.js";
 import { truncateMcpInstructionString } from "./truncateMcpString.js";
+import {
+  createExtensionApiRecorder,
+  type PilotDeckExtensionActions,
+  type PluginStatusEvent,
+} from "./ExtensionApi.js";
 import type { PilotDeckHooksSettings } from "../../hooks/protocol/settings.js";
+import type { CallbackHookHandler } from "../../hooks/execution/CallbackHookExecutor.js";
+import type { PilotDeckToolDefinition } from "../../../tool/protocol/types.js";
 import type { PilotDeckCustomRouter } from "../../../router/customRouter/customRouter.js";
 import { renderSkillContent } from "../../skills/renderSkillContent.js";
 
@@ -38,6 +45,12 @@ export type PluginRuntimeOptions = {
   builtinSkillsRoot?: string;
   builtinPlugins?: PilotDeckLoadedPlugin[];
   builtinPluginsEnabled?: Record<string, boolean>;
+  /**
+   * Lazily bound run-time actions for code plugins (narrow Gateway
+   * projection). Lazy because the Gateway is typically constructed after
+   * the plugin runtime that serves it.
+   */
+  getExtensionActions?: () => PilotDeckExtensionActions | undefined;
 };
 
 export type PluginRefreshResult = {
@@ -76,12 +89,44 @@ export type PluginContributionSnapshot = {
   mcpServers: Record<string, unknown>;
   lspServers: Record<string, unknown>;
   mcpInstructions: PluginMcpInstruction[];
+  /** Tools registered by code plugins via `api.registerTool`. */
+  tools: PilotDeckToolDefinition[];
+  /** Callback handlers backing code-plugin hooks (`type: "callback"` entries). */
+  hookCallbacks: Record<string, CallbackHookHandler>;
 };
 
 export class PluginRuntime {
   private readonly registry = new PluginRegistry();
+  private readonly programmaticHost: ProgrammaticPluginHost = {
+    createRecorder: (pluginName) =>
+      createExtensionApiRecorder({
+        pluginName,
+        getActions: () => this.options.getExtensionActions?.(),
+        emitStatus: (event) => this.emitPluginStatus(event),
+      }),
+  };
+  private readonly statusListeners = new Set<(event: PluginStatusEvent) => void>();
+  private readonly statuses = new Map<string, PluginStatusEvent>();
 
   constructor(private readonly options: PluginRuntimeOptions) {}
+
+  /** Latest self-reported plugin statuses, one per plugin+session key. */
+  pluginStatuses(): PluginStatusEvent[] {
+    return [...this.statuses.values()];
+  }
+
+  /** Subscribe to plugin status updates; returns an unsubscribe function. */
+  onPluginStatus(listener: (event: PluginStatusEvent) => void): () => void {
+    this.statusListeners.add(listener);
+    return () => this.statusListeners.delete(listener);
+  }
+
+  private emitPluginStatus(event: PluginStatusEvent): void {
+    this.statuses.set(`${event.pluginName}:${event.sessionKey}`, event);
+    for (const listener of this.statusListeners) {
+      listener(event);
+    }
+  }
 
   snapshot(): PilotDeckLoadedPlugin[] {
     return this.registry.list();
@@ -141,6 +186,11 @@ export class PluginRuntime {
       mcpServers: this.mcpServers(),
       lspServers: this.lspServers(),
       mcpInstructions: this.getAllMcpInstructions(),
+      tools: plugins.flatMap((plugin) => plugin.tools ?? []),
+      hookCallbacks: Object.assign(
+        {},
+        ...plugins.map((plugin) => plugin.hookCallbacks ?? {}),
+      ) as Record<string, CallbackHookHandler>,
     };
   }
 
@@ -166,6 +216,16 @@ export class PluginRuntime {
 
   async loadSkillPrompt(extensionId: string): Promise<string | undefined> {
     const plugins = sortByResolutionPriority(this.registry.list());
+
+    // Code-plugin command handlers take precedence: they are executable
+    // prompts, resolved lazily so the handler runs at invocation time.
+    for (const plugin of plugins) {
+      const handler =
+        plugin.commandHandlers?.[extensionId] ?? plugin.commandHandlers?.[`${plugin.name}:${extensionId}`];
+      if (handler) {
+        return handler("");
+      }
+    }
 
     for (const plugin of plugins) {
       const prompt = plugin.promptContributions?.find((contribution) => contribution.name === extensionId);
@@ -223,13 +283,13 @@ export class PluginRuntime {
       ]),
       Promise.all(
         (this.options.builtinPlugins ?? []).map((plugin) =>
-          loadPluginFromPath(plugin.path, "builtin").catch(() => plugin),
+          loadPluginFromPath(plugin.path, "builtin", this.programmaticHost).catch(() => plugin),
         ),
       ),
     ]);
     const [loaded, loadedSkills] = await Promise.all([
       Promise.all(
-        discovered.map((plugin) => loadPluginFromPath(plugin.path, plugin.source).catch(() => undefined)),
+        discovered.map((plugin) => loadPluginFromPath(plugin.path, plugin.source, this.programmaticHost).catch(() => undefined)),
       ),
       Promise.all(
         discoveredSkills.map((s) => loadSkillFromPath(s.path, s.source).catch(() => undefined)),
